@@ -1,0 +1,165 @@
+@using CarCareTracker.Helper
+@inject IConfigHelper config
+@inject ITranslationHelper translator
+@model MaintenanceOverviewViewModel
+@{
+    var userConfig = config.GetUserConfig(User);
+    var userLanguage = userConfig.UserLanguage;
+    var items = Model.Items;
+    string DaysPhrase(int days, bool approximate)
+    {
+        var abs = Math.Abs(days);
+        var tilde = approximate ? "~" : "";
+        if (days == 0) return translator.Translate(userLanguage, "today");
+        string span = abs < 365
+            ? $"{tilde}{abs:N0} {translator.Translate(userLanguage, abs == 1 ? "day" : "days")}"
+            : $"{tilde}{Math.Round(abs / 365.25, 1)} {translator.Translate(userLanguage, "yr")}";
+        return days < 0 ? $"{span} {translator.Translate(userLanguage, "ago")}" : $"{translator.Translate(userLanguage, "in")} {span}";
+    }
+    string UrgencyBadgeClass(ReminderUrgency urgency) => urgency switch
+    {
+        ReminderUrgency.PastDue => "bg-secondary",
+        ReminderUrgency.VeryUrgent => "bg-danger",
+        ReminderUrgency.Urgent => "text-bg-warning",
+        _ => "bg-success"
+    };
+    string UrgencyLabel(ReminderUrgency urgency) => urgency switch
+    {
+        ReminderUrgency.PastDue => translator.Translate(userLanguage, "Past Due"),
+        ReminderUrgency.VeryUrgent => translator.Translate(userLanguage, "Very Urgent"),
+        ReminderUrgency.Urgent => translator.Translate(userLanguage, "Urgent"),
+        _ => translator.Translate(userLanguage, "Not Urgent")
+    };
+}
+<style>
+    /* Cells must not grow to fit their content (long notes), or the d-flex rows widen past
+       the container and push the right-hand columns off-screen. */
+    #maintenanceOverviewTable tr > th,
+    #maintenanceOverviewTable tr > td {
+        min-width: 0;
+        overflow: hidden;
+    }
+</style>
+<div class="d-flex flex-column vehicleTabPane maintenanceOverview">
+    <div class="row">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mt-2 mb-2">
+            <div class="d-flex align-items-center flex-wrap gap-2">
+                <span class="badge bg-secondary maintenance-urgency-filter" data-urgency="PastDue" style="cursor:pointer;" onclick="toggleMaintenanceUrgencyFilter(this)">@($"{translator.Translate(userLanguage, "Past Due")}: {items.Count(x => x.Urgency == ReminderUrgency.PastDue)}")</span>
+                <span class="badge bg-danger maintenance-urgency-filter" data-urgency="VeryUrgent" style="cursor:pointer;" onclick="toggleMaintenanceUrgencyFilter(this)">@($"{translator.Translate(userLanguage, "Very Urgent")}: {items.Count(x => x.Urgency == ReminderUrgency.VeryUrgent)}")</span>
+                <span class="badge text-bg-warning maintenance-urgency-filter" data-urgency="Urgent" style="cursor:pointer;" onclick="toggleMaintenanceUrgencyFilter(this)">@($"{translator.Translate(userLanguage, "Urgent")}: {items.Count(x => x.Urgency == ReminderUrgency.Urgent)}")</span>
+                <span class="badge bg-success maintenance-urgency-filter" data-urgency="NotUrgent" style="cursor:pointer;" onclick="toggleMaintenanceUrgencyFilter(this)">@($"{translator.Translate(userLanguage, "Not Urgent")}: {items.Count(x => x.Urgency == ReminderUrgency.NotUrgent)}")</span>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <select class="form-select" id="maintenanceVehicleFilter" onchange="filterMaintenanceTable()" style="min-width:16rem;">
+                    <option value="">@translator.Translate(userLanguage, "All Vehicles")</option>
+                    @foreach (var vehicle in Model.Vehicles)
+                    {
+                        <!option value="@vehicle.Key">@vehicle.Value</!option>
+                    }
+                </select>
+                <select class="form-select" id="maintenanceHorizonFilter" onchange="filterMaintenanceTable()" style="min-width:10rem;">
+                    <option value="">@translator.Translate(userLanguage, "Any time")</option>
+                    <option value="30">@translator.Translate(userLanguage, "Next 30 days")</option>
+                    <option value="90">@translator.Translate(userLanguage, "Next 90 days")</option>
+                    <option value="180">@translator.Translate(userLanguage, "Next 6 months")</option>
+                    <option value="365">@translator.Translate(userLanguage, "Next 12 months")</option>
+                </select>
+            </div>
+        </div>
+    </div>
+    <div class="row vehicleDetailTabContainer flex-grow-1">
+        <div class="col-12">
+            @if (!items.Any())
+            {
+                <div class="text-center mt-5"><h4>@translator.Translate(userLanguage, "No reminders found")</h4></div>
+            }
+            else
+            {
+                <table class="table table-hover" id="maintenanceOverviewTable" style="table-layout:fixed;width:100%;">
+                    <thead class="sticky-top">
+                        <tr class="d-flex">
+                            <th scope="col" class="col-2 col-md-1">@translator.Translate(userLanguage, "Urgency")</th>
+                            <th scope="col" class="col-3">@translator.Translate(userLanguage, "Vehicle")</th>
+                            <th scope="col" class="col-3 col-md-4">@translator.Translate(userLanguage, "Description")</th>
+                            <th scope="col" class="col-4 col-md-3" title="@translator.Translate(userLanguage, "Earliest of the due date and the date projected from recent driving")">@translator.Translate(userLanguage, "Due")</th>
+                            <th scope="col" class="d-none d-md-block col-md-1 text-center">@translator.Translate(userLanguage, "Done")</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in items)
+                        {
+                            var overdueDistance = item.HasOdometer && item.DueDistance < 0;
+                            var distanceLeft = overdueDistance
+                                ? $"{Math.Abs(item.DueDistance):N0} {item.DistanceUnit} {translator.Translate(userLanguage, "over")}"
+                                : $"{item.DueDistance:N0} {item.DistanceUnit} {translator.Translate(userLanguage, "left")}";
+                            <tr class="d-flex maintenance-row" style="cursor:pointer;"
+                                data-vehicle-id="@item.VehicleId"
+                                data-urgency="@item.Urgency"
+                                data-effective-days="@(item.EffectiveDays == int.MaxValue ? "" : item.EffectiveDays.ToString())"
+                                onclick="viewVehicle(@item.VehicleId, 'reminder')">
+                                <td class="col-2 col-md-1"><span class="badge @UrgencyBadgeClass(item.Urgency)">@UrgencyLabel(item.Urgency)</span></td>
+                                <td class="col-3">
+                                    <div class="text-truncate">@item.VehicleName</div>
+                                    <small class="text-body-secondary">@item.VehicleIdentifier</small>
+                                </td>
+                                <td class="col-3 col-md-4">
+                                    <div class="text-truncate">
+                                        @item.Description
+                                        @if (item.IsRecurring)
+                                        {
+                                            <i class="bi bi-arrow-repeat ms-1 text-body-secondary" title="@translator.Translate(userLanguage, "Recurring")"></i>
+                                        }
+                                    </div>
+                                    @if (!string.IsNullOrWhiteSpace(item.Notes))
+                                    {
+                                        <small class="text-body-secondary text-truncate d-block" title="@item.Notes">@StaticHelper.TruncateStrings(item.Notes, 80)</small>
+                                    }
+                                </td>
+                                <td class="col-4 col-md-3">
+                                    @if (item.EstimatedDueDate.HasValue)
+                                    {
+                                        var est = item.EstimatedDueDate.Value;
+                                        var estDays = (int)(est - DateTime.Today).TotalDays;
+                                        <div class="text-truncate @(estDays < 0 ? "text-danger" : "")" title="@(item.IsEstimateProjected ? translator.Translate(userLanguage, "Projected from recent driving") : translator.Translate(userLanguage, "Due date"))">
+                                            @(item.IsEstimateProjected ? "~" : "")@est.ToShortDateString()
+                                            <small class="@(estDays < 0 ? "" : "text-body-secondary")">(@DaysPhrase(estDays, item.IsEstimateProjected))</small>
+                                        </div>
+                                        @if (item.HasOdometer)
+                                        {
+                                            <small class="text-body-secondary d-block text-truncate">
+                                                <i class="bi bi-speedometer me-1"></i>@item.DueOdometer.ToString("N0") @item.DistanceUnit · <span class="@(overdueDistance ? "text-danger" : "")">@distanceLeft</span>
+                                                @if (item.IsEstimateProjected && item.HasDate)
+                                                {
+                                                    //mileage comes first; mention the date limit too.
+                                                    <span>· @translator.Translate(userLanguage, "or") @item.DueDate.ToShortDateString()</span>
+                                                }
+                                                else if (!item.IsEstimateProjected && item.ProjectedDays.HasValue)
+                                                {
+                                                    //date comes first; show where the mileage limit lands so e.g. 60k vs 80k items are distinguishable.
+                                                    <span title="@translator.Translate(userLanguage, "Projected from recent driving")">· ~@DateTime.Today.AddDays(item.ProjectedDays.Value).ToString("MMM yyyy")</span>
+                                                }
+                                            </small>
+                                        }
+                                    }
+                                    else if (item.HasOdometer)
+                                    {
+                                        //odometer-only with not enough history to project a date.
+                                        <div class="@(overdueDistance ? "text-danger" : "")"><i class="bi bi-speedometer me-1"></i>@item.DueOdometer.ToString("N0") @item.DistanceUnit</div>
+                                        <small class="text-body-secondary d-block text-truncate" title="@translator.Translate(userLanguage, "Not enough odometer history to estimate a date")"><span class="@(overdueDistance ? "text-danger" : "")">@distanceLeft</span></small>
+                                    }
+                                </td>
+                                <td class="d-none d-md-block col-md-1 text-center">
+                                    @if (item.IsRecurring)
+                                    {
+                                        <button type="button" class="btn btn-sm btn-outline-success" title="@translator.Translate(userLanguage, "Mark as done and schedule next")" onclick="markDoneMaintenanceReminder(@item.ReminderId, event)"><i class="bi bi-check-lg"></i></button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                <div class="text-center text-body-secondary maintenance-empty-filter" style="display:none;">@translator.Translate(userLanguage, "No reminders match the current filters")</div>
+            }
+        </div>
+    </div>
+</div>

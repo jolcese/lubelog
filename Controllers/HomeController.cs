@@ -132,6 +132,118 @@ namespace CarCareTracker.Controllers
             var reminders = _vehicleLogic.GetReminders(vehiclesStored, true);
             return PartialView("_Calendar", reminders);
         }
+        public IActionResult Maintenance()
+        {
+            var vehiclesStored = _dataAccess.GetVehicles();
+            if (!User.IsInRole(nameof(UserData.IsRootUser)))
+            {
+                vehiclesStored = _userLogic.FilterUserVehicles(vehiclesStored, GetUserID());
+            }
+            //sold vehicles don't need maintenance.
+            vehiclesStored.RemoveAll(x => !string.IsNullOrWhiteSpace(x.SoldDate));
+            var userConfig = _config.GetUserConfig(User);
+            var viewModel = new MaintenanceOverviewViewModel();
+            foreach (Vehicle vehicle in vehiclesStored)
+            {
+                var vehicleName = $"{vehicle.Year} {vehicle.Make} {vehicle.Model}";
+                viewModel.Vehicles.Add(new KeyValuePair<int, string>(vehicle.Id, vehicleName));
+                var reminders = _reminderRecordDataAccess.GetReminderRecordsByVehicleId(vehicle.Id);
+                if (!reminders.Any())
+                {
+                    continue;
+                }
+                var vehicleRecords = _vehicleLogic.GetVehicleRecords(vehicle.Id);
+                var currentMileage = _vehicleLogic.GetMaxMileage(vehicleRecords);
+                var dailyRate = GetDailyUsageRate(vehicleRecords);
+                var distanceUnit = vehicle.UseHours ? "h" : userConfig.UseMPG ? "mi." : "km";
+                var reminderViewModels = _reminderHelper.GetReminderRecordViewModels(reminders, currentMileage, DateTime.Now);
+                foreach (var reminder in reminderViewModels)
+                {
+                    var item = new MaintenanceOverviewItem
+                    {
+                        ReminderId = reminder.Id,
+                        VehicleId = vehicle.Id,
+                        VehicleName = vehicleName,
+                        VehicleIdentifier = StaticHelper.GetVehicleIdentifier(vehicle),
+                        Description = reminder.Description,
+                        Notes = reminder.Notes,
+                        UserMetric = reminder.UserMetric,
+                        Urgency = reminder.Urgency,
+                        IsRecurring = reminder.IsRecurring,
+                        DueDate = reminder.Date,
+                        DueDays = reminder.DueDays,
+                        DueOdometer = reminder.Mileage,
+                        DueDistance = reminder.DueMileage,
+                        CurrentOdometer = currentMileage,
+                        DistanceUnit = distanceUnit
+                    };
+                    if (item.HasOdometer && dailyRate > 0)
+                    {
+                        item.ProjectedDays = (int)Math.Floor(item.DueDistance / dailyRate);
+                    }
+                    var candidates = new List<int>();
+                    if (item.HasDate)
+                    {
+                        candidates.Add(item.DueDays);
+                    }
+                    if (item.ProjectedDays.HasValue)
+                    {
+                        candidates.Add(item.ProjectedDays.Value);
+                    }
+                    else if (item.HasOdometer && item.DueDistance < 0)
+                    {
+                        //past due by odometer but no usage rate, treat as due today.
+                        candidates.Add(0);
+                    }
+                    item.EffectiveDays = candidates.Any() ? candidates.Min() : int.MaxValue;
+                    if (item.HasDate && (!item.ProjectedDays.HasValue || item.DueDays <= item.ProjectedDays.Value))
+                    {
+                        item.EstimatedDueDate = item.DueDate;
+                    }
+                    else if (item.ProjectedDays.HasValue)
+                    {
+                        item.EstimatedDueDate = DateTime.Today.AddDays(item.ProjectedDays.Value);
+                        item.IsEstimateProjected = true;
+                    }
+                    viewModel.Items.Add(item);
+                }
+            }
+            viewModel.Items = viewModel.Items
+                .OrderByDescending(x => x.Urgency)
+                .ThenBy(x => x.EffectiveDays)
+                .ThenBy(x => x.DueDistance)
+                .ToList();
+            return PartialView("_Maintenance", viewModel);
+        }
+        /// <summary>
+        /// Estimates the average distance (or hours) driven per day using odometer readings
+        /// from the last year, falling back to the full history if the last year is too sparse.
+        /// </summary>
+        private static double GetDailyUsageRate(VehicleRecords vehicleRecords)
+        {
+            var readings = new List<(DateTime Date, int Mileage)>();
+            readings.AddRange(vehicleRecords.ServiceRecords.Select(x => (x.Date, x.Mileage)));
+            readings.AddRange(vehicleRecords.CollisionRecords.Select(x => (x.Date, x.Mileage)));
+            readings.AddRange(vehicleRecords.UpgradeRecords.Select(x => (x.Date, x.Mileage)));
+            readings.AddRange(vehicleRecords.GasRecords.Select(x => (x.Date, x.Mileage)));
+            readings.AddRange(vehicleRecords.OdometerRecords.Select(x => (x.Date, x.Mileage)));
+            readings.RemoveAll(x => x.Mileage <= 0);
+            double ComputeRate(List<(DateTime Date, int Mileage)> points)
+            {
+                if (points.Count < 2)
+                {
+                    return 0;
+                }
+                var first = points.MinBy(x => x.Date);
+                var last = points.MaxBy(x => x.Date);
+                var days = (last.Date - first.Date).TotalDays;
+                var distance = points.Max(x => x.Mileage) - points.Where(x => x.Date == first.Date).Min(x => x.Mileage);
+                return days >= 14 && distance > 0 ? distance / days : 0;
+            }
+            var recent = readings.Where(x => x.Date >= DateTime.Now.AddDays(-365)).ToList();
+            var rate = ComputeRate(recent);
+            return rate > 0 ? rate : ComputeRate(readings);
+        }
         public IActionResult ViewCalendarReminder(int reminderId)
         {
             var reminder = _reminderRecordDataAccess.GetReminderRecordById(reminderId);

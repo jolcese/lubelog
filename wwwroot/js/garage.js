@@ -50,6 +50,9 @@ function bindTabEvent() {
             case "calendar-tab":
                 getVehicleCalendarEvents();
                 break;
+            case "maintenance-tab":
+                getMaintenanceOverview();
+                break;
         }
         $(`.lubelogger-tab #${e.target.id}`).addClass('active');
         $(`.lubelogger-mobile-nav #${e.target.id}`).addClass('active');
@@ -67,12 +70,82 @@ function bindTabEvent() {
                 case "calendar-tab":
                     $("#calendar-tab-pane").html("");
                     break;
+                case "maintenance-tab":
+                    $("#maintenance-tab-pane").html("");
+                    break;
             }
             $(`.lubelogger-tab #${e.relatedTarget.id}`).removeClass('active');
             $(`.lubelogger-mobile-nav #${e.relatedTarget.id}`).removeClass('active');
         }
         setBrowserHistory('tab', getTabNameForURL(e.target.id));
         bindTabEvents(e.target.id);
+    });
+}
+function getMaintenanceOverview() {
+    $.get('/Home/Maintenance', function (data) {
+        if (data) {
+            $("#maintenance-tab-pane").html(data);
+            restoreMaintenanceFilters();
+            filterMaintenanceTable();
+        }
+    });
+}
+function getMaintenanceFilterState() {
+    let stored = sessionStorage.getItem('maintenanceFilters');
+    return stored ? JSON.parse(stored) : { vehicleId: '', horizon: '', hiddenUrgencies: [] };
+}
+function restoreMaintenanceFilters() {
+    let state = getMaintenanceFilterState();
+    $("#maintenanceVehicleFilter").val(state.vehicleId);
+    $("#maintenanceHorizonFilter").val(state.horizon);
+    $(".maintenance-urgency-filter").each(function () {
+        $(this).toggleClass('opacity-25', state.hiddenUrgencies.includes($(this).data('urgency')));
+    });
+}
+function toggleMaintenanceUrgencyFilter(e) {
+    $(e).toggleClass('opacity-25');
+    filterMaintenanceTable();
+}
+function filterMaintenanceTable() {
+    let vehicleId = $("#maintenanceVehicleFilter").val() ?? '';
+    let horizon = $("#maintenanceHorizonFilter").val() ?? '';
+    let hiddenUrgencies = $(".maintenance-urgency-filter.opacity-25").map(function () { return $(this).data('urgency'); }).get();
+    sessionStorage.setItem('maintenanceFilters', JSON.stringify({ vehicleId: vehicleId, horizon: horizon, hiddenUrgencies: hiddenUrgencies }));
+    let visibleCount = 0;
+    $(".maintenance-row").each(function () {
+        let row = $(this);
+        let visible = true;
+        if (vehicleId != '' && row.data('vehicle-id').toString() != vehicleId) {
+            visible = false;
+        }
+        if (hiddenUrgencies.includes(row.data('urgency'))) {
+            visible = false;
+        }
+        if (horizon != '') {
+            let effectiveDays = row.attr('data-effective-days');
+            //past due / urgent items always pass the time horizon filter.
+            let isUrgent = row.data('urgency') != 'NotUrgent';
+            if (!isUrgent && (effectiveDays == '' || parseInt(effectiveDays) > parseInt(horizon))) {
+                visible = false;
+            }
+        }
+        //rows use d-flex (display:flex !important), so hide via class like the other LubeLogger table filters.
+        row.toggleClass('override-hide', !visible);
+        if (visible) {
+            visibleCount++;
+        }
+    });
+    $(".maintenance-empty-filter").toggle(visibleCount == 0 && $(".maintenance-row").length > 0);
+}
+function markDoneMaintenanceReminder(reminderRecordId, e) {
+    e.stopPropagation();
+    $.post(`/Vehicle/PushbackRecurringReminderRecord?reminderRecordId=${reminderRecordId}`, function (data) {
+        if (data.success) {
+            successToast("Reminder Updated");
+            getMaintenanceOverview();
+        } else {
+            errorToast(data.message);
+        }
     });
 }
 function getVehicleCalendarEvents() {

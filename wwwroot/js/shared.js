@@ -2216,6 +2216,9 @@ function bindTabEvents(tab) {
         case "calendar-tab":
             setupEventHub(`kiosk`, getVehicleCalendarEvents, '');
             break;
+        case "maintenance-tab":
+            setupEventHub(`kiosk`, getMaintenanceOverview, '');
+            break;
         case "reminder-tab":
             checkQueryParams('#reminderRecordModalContent', showEditReminderRecordModal, 'id');
             checkQueryParams('#reminderRecordModalContent', showAddReminderModal, 'add');
