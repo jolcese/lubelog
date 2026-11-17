@@ -9,6 +9,28 @@
         }
     });
 }
+function showAddServiceRecordModalForReminder(reminderRecordId) {
+    //Opened from the garage Maintenance tab: same as picking the reminder under "Select Reminder",
+    //so saving creates the service record and pushes the recurring reminder forward from it.
+    let currentParams = new URLSearchParams(window.location.search);
+    let description = currentParams.get('reminderDescription') ?? '';
+    setBrowserHistory('reminderDescription', '');
+    $.get('/Vehicle/GetAddServiceRecordPartialView', function (data) {
+        if (data) {
+            $("#serviceRecordModalContent").html(data);
+            initDatePicker($('#serviceRecordDate'));
+            initTagSelector($("#serviceRecordTag"));
+            recurringReminderRecordId = [parseInt(reminderRecordId)];
+            if (description != '') {
+                $("#serviceRecordDescription").val(description);
+            }
+            setLastOdometer('serviceRecordMileage');
+            $('#serviceRecordModal').modal('show');
+            //description comes from the URL and Swal renders titles as HTML, so encode it.
+            infoToast(`Linked to reminder: ${encodeHTMLInput(description)}`);
+        }
+    });
+}
 function showEditServiceRecordModal(serviceRecordId, nocache) {
     if (!nocache) {
         var existingContent = $("#serviceRecordModalContent").html();

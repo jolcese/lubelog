@@ -2183,6 +2183,7 @@ function bindTabEvents(tab) {
         case "servicerecord-tab":
             checkQueryParams('#serviceRecordModalContent', showEditServiceRecordModal, 'id');
             checkQueryParams('#serviceRecordModalContent', showAddServiceRecordModal, 'add');
+            checkQueryParams('#serviceRecordModalContent', showAddServiceRecordModalForReminder, 'reminderDone');
             setupEventHub(`vehicleId_${GetVehicleId().vehicleId}`, getVehicleServiceRecords, GetVehicleId().vehicleId);
             break;
         case "notes-tab":
@@ -2215,6 +2216,9 @@ function bindTabEvents(tab) {
             break;
         case "calendar-tab":
             setupEventHub(`kiosk`, getVehicleCalendarEvents, '');
+            break;
+        case "maintenance-tab":
+            setupEventHub(`kiosk`, getMaintenanceOverview, '');
             break;
         case "reminder-tab":
             checkQueryParams('#reminderRecordModalContent', showEditReminderRecordModal, 'id');
