@@ -2183,6 +2183,7 @@ function bindTabEvents(tab) {
         case "servicerecord-tab":
             checkQueryParams('#serviceRecordModalContent', showEditServiceRecordModal, 'id');
             checkQueryParams('#serviceRecordModalContent', showAddServiceRecordModal, 'add');
+            checkQueryParams('#serviceRecordModalContent', showAddServiceRecordModalForReminder, 'reminderDone');
             setupEventHub(`vehicleId_${GetVehicleId().vehicleId}`, getVehicleServiceRecords, GetVehicleId().vehicleId);
             break;
         case "notes-tab":

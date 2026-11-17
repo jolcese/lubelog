@@ -151,7 +151,7 @@
                                 <td class="d-none d-md-block col-md-1 text-center">
                                     @if (item.IsRecurring)
                                     {
-                                        <button type="button" class="btn btn-sm btn-outline-success" title="@translator.Translate(userLanguage, "Mark as done and schedule next")" onclick="markDoneMaintenanceReminder(@item.ReminderId, event)"><i class="bi bi-check-lg"></i></button>
+                                        <button type="button" class="btn btn-sm btn-outline-success" title="@translator.Translate(userLanguage, "Log a service record for this and reset the reminder")" data-vehicle-id="@item.VehicleId" data-reminder-id="@item.ReminderId" data-description="@item.Description" onclick="logServiceForMaintenanceReminder(event)"><i class="bi bi-check-lg"></i></button>
                                     }
                                 </td>
                             </tr>

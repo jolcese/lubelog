@@ -137,16 +137,18 @@ function filterMaintenanceTable() {
     });
     $(".maintenance-empty-filter").toggle(visibleCount == 0 && $(".maintenance-row").length > 0);
 }
-function markDoneMaintenanceReminder(reminderRecordId, e) {
+function logServiceForMaintenanceReminder(e) {
+    //Open the vehicle's Add Service Record with this reminder pre-linked, so saving creates the record
+    //and pushes the recurring reminder forward from the record's date and odometer (not its old due point).
     e.stopPropagation();
-    $.post(`/Vehicle/PushbackRecurringReminderRecord?reminderRecordId=${reminderRecordId}`, function (data) {
-        if (data.success) {
-            successToast("Reminder Updated");
-            getMaintenanceOverview();
-        } else {
-            errorToast(data.message);
-        }
+    let btn = $(e.currentTarget);
+    let params = new URLSearchParams({
+        vehicleId: btn.data('vehicle-id'),
+        tab: 'servicerecord',
+        reminderDone: btn.data('reminder-id'),
+        reminderDescription: btn.data('description')
     });
+    window.location.href = `/Vehicle/Index?${params.toString()}`;
 }
 function getVehicleCalendarEvents() {
     $.get('/Home/Calendar', function (data) {
